@@ -1,0 +1,39 @@
+# Core Deep Learning (Pinned versions for faster install)
+torch==2.1.2
+torchvision==0.16.2
+ultralytics==8.1.0  # YOLOv11
+# super-gradients==3.5.0  # YOLO-NAS - Install separately if needed
+# transformers==4.35.0  # RT-DETR - Install separately if needed
+
+# Computer Vision
+opencv-python==4.8.1.78
+Pillow==10.1.0
+
+# Tracking
+supervision==0.16.0  # Includes ByteTrack
+
+# GUI
+PySide6==6.6.0
+
+# Data Processing
+numpy==1.24.3
+pandas==2.0.3
+
+# Video Processing
+imageio==2.31.5
+imageio-ffmpeg==0.4.9
+
+# Utilities
+pyyaml==6.0.1
+tqdm==4.66.1
+
+# Logging
+loguru==0.7.2
+
+# Export & Reporting
+reportlab==4.0.7
+matplotlib==3.7.3
+seaborn==0.13.0
+
+# Video Download (optional - install later if needed)
+# yt-dlp==2023.10.0

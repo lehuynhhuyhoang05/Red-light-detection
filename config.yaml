@@ -1,0 +1,140 @@
+# Red Light Violation Detection System - Configuration
+
+# Project Info
+project:
+  name: "Red Light Violation Detection"
+  version: "1.0.0"
+  author: "ITS Research Team"
+
+# Model Settings
+model:
+  # Choose: yolov11, yolo-nas, rt-detr
+  type: "yolov11"
+  
+  # Model variants
+  yolov11:
+    variant: "yolov11s"  # n, s, m, l, x
+    weights: "models/yolov11.pt"
+    img_size: 640
+    conf_threshold: 0.25  # Tăng lên để giảm false positive
+    iou_threshold: 0.45
+  
+  yolo_nas:
+    variant: "yolo_nas_s"  # s, m, l
+    weights: "models/yolo_nas_s_best.pth"
+    img_size: 640
+    conf_threshold: 0.25
+  
+  rt_detr:
+    variant: "rtdetr-l"
+    weights: "models/rf-detr.pt"
+    img_size: 640
+    conf_threshold: 0.25
+
+# Classes
+classes:
+  vehicle: 0
+  motorcycle: 1
+  car: 2
+  truck: 3
+  red_light: 4
+  yellow_light: 5
+  green_light: 6
+  stop_line: 7
+
+# Tracking Settings
+tracking:
+  tracker: "bytetrack"
+  track_thresh: 0.3  # Giảm để track nhiều xe hơn
+  track_buffer: 60   # Tăng buffer để không mất track
+  match_thresh: 0.7  # Giảm để match dễ hơn
+  min_box_area: 50   # Giảm để bắt xe nhỏ
+
+# Violation Logic
+violation:
+  # Minimum frames to confirm violation
+  min_frames: 3
+  
+  # Distance threshold from stop line (pixels)
+  stop_line_threshold: 30
+  
+  # Grace period when light turns red (seconds)
+  grace_period: 0.5
+  
+  # Minimum vehicle confidence để tính vi phạm
+  min_vehicle_confidence: 0.5
+  
+  # Save violation evidence
+  save_evidence: true
+  evidence_frames: 5  # Number of frames to save
+  
+  # ROI (Region of Interest) - Chỉ bắt xe trong vùng này
+  # Tọa độ tương đối (0.0 - 1.0) của frame
+  roi:
+    enabled: true
+    x_min: 0.25  # 25% từ trái (bỏ lane ngược chiều bên trái)
+    x_max: 0.85  # 85% từ trái (mở rộng)
+    y_min: 0.20  # 20% từ trên
+    y_max: 0.95  # 95% từ trên (mở rộng để bắt xe gần camera)
+
+# Video Processing
+video:
+  # Process every N frames (1 = all frames)
+  frame_skip: 1
+  
+  # Video output settings
+  output_fps: 30
+  output_codec: "mp4v"
+  
+  # Display settings
+  show_confidence: true
+  show_tracking_id: true
+  box_thickness: 2
+
+# GUI Settings
+gui:
+  window_title: "Red Light Violation Detection System"
+  window_width: 1920
+  window_height: 1080
+  theme: "dark"  # dark, light
+  language: "vi"  # vi, en
+
+# Paths
+paths:
+  models: "models"
+  data: "data"
+  videos: "data/videos"
+  frames: "data/frames"
+  violations: "data/violations"
+  sessions: "data/sessions"
+  logs: "logs"
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/app.log"
+  max_size_mb: 50
+  backup_count: 5
+
+# Performance
+performance:
+  device: "cuda"  # cuda, cpu, mps
+  half_precision: false  # FP16 for faster inference
+  batch_size: 1
+  num_workers: 4
+
+# Location Info (for reports)
+location:
+  intersection: "Ngã tư Lê Duẩn - Điện Biên Phủ"
+  city: "Đà Nẵng"
+  camera_id: "CAM-001"
+  fine_amount: "4.000.000 - 6.000.000 VNĐ"
+
+# Training Settings (for reference)
+training:
+  epochs: 300
+  batch_size: 16
+  img_size: 640
+  learning_rate: 0.01
+  optimizer: "SGD"
+  augmentation: true

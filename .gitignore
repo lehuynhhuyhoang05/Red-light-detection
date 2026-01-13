@@ -1,0 +1,74 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+venv_temp/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Models
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.engine
+
+# Data
+data/videos/*
+data/frames/*
+data/violations/*
+data/sessions/*
+!data/videos/.gitkeep
+!data/frames/.gitkeep
+!data/violations/.gitkeep
+!data/sessions/.gitkeep
+
+# Logs
+logs/*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment
+.env
+.env.local
+
+# Tensorboard
+runs/
+
+# Temporary
+tmp/
+temp/
+*.tmp
+test_*.jpg
+violations.json
+data/kaggle/

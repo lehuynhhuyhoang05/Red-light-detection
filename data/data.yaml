@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['Green_light', 'red_light', 'yellow_light']
+
+roboflow:
+  workspace: traffic-light-be5sc
+  project: traffic-light-1wdof
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/traffic-light-be5sc/traffic-light-1wdof/dataset/3
