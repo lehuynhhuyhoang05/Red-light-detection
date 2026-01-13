@@ -35,6 +35,10 @@ data/videos/*
 data/frames/*
 data/violations/*
 data/sessions/*
+data/train/
+data/test/
+data/valid/
+data/red_light_violation_dataset/
 !data/videos/.gitkeep
 !data/frames/.gitkeep
 !data/violations/.gitkeep
