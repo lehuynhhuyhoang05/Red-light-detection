@@ -64,7 +64,7 @@ class VideoProcessor(QThread):
                     tracked_vehicles = self.tracker.update(detections)
                     
                     # Check violations
-                    violations = self.violation_detector.update(
+                    new_violations = self.violation_detector.update(
                         tracked_vehicles, detections, frame, frame_number, timestamp
                     )
                     
@@ -78,12 +78,17 @@ class VideoProcessor(QThread):
                                    (x1, y2 + 20), cv2.FONT_HERSHEY_SIMPLEX,
                                    0.5, (255, 255, 0), 2)
                     
+                    # ========== REAL-TIME VIOLATION DISPLAY ==========
+                    # Draw all detected violations on frame
+                    annotated = self._draw_violations_realtime(annotated, tracked_vehicles)
+                    
                     # Statistics
                     stats = {
                         'frame': frame_number,
                         'total_frames': total_frames,
                         'vehicles': len(tracked_vehicles),
-                        'violations': len(violations),
+                        'violations': len(new_violations),
+                        'new_violations': new_violations,  # Pass new violations for alert
                         'light_state': self.violation_detector.current_light_state
                     }
                     
@@ -107,6 +112,77 @@ class VideoProcessor(QThread):
     
     def stop(self):
         self.is_running = False
+    
+    def _draw_violations_realtime(self, frame: np.ndarray, tracked_vehicles: list) -> np.ndarray:
+        """
+        Draw real-time violation indicators on frame
+        
+        Hiển thị:
+        - Xe vi phạm: khung đỏ đậm + chữ "VI PHẠM"
+        - Alert banner trên cùng khi có vi phạm mới
+        - Tổng số vi phạm hiện tại
+        """
+        annotated = frame.copy()
+        h, w = annotated.shape[:2]
+        
+        # Get all violations
+        all_violations = self.violation_detector.violations
+        total_violations = len(all_violations)
+        
+        # Draw violation count panel (top-right)
+        panel_color = (0, 0, 200) if total_violations > 0 else (100, 100, 100)
+        cv2.rectangle(annotated, (w - 200, 10), (w - 10, 60), panel_color, -1)
+        cv2.rectangle(annotated, (w - 200, 10), (w - 10, 60), (255, 255, 255), 2)
+        cv2.putText(annotated, f"VI PHAM: {total_violations}", (w - 190, 45),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        
+        # Draw stop line ONLY if detected (not default)
+        if (self.violation_detector.stop_line and 
+            self.violation_detector.stop_line.is_valid and
+            self.violation_detector.stop_line.detection is not None):
+            stop_y = self.violation_detector.stop_line.line_y
+            cv2.line(annotated, (0, stop_y), (w, stop_y), (0, 255, 255), 2)
+            cv2.putText(annotated, "STOP LINE", (10, stop_y - 10),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        
+        # Draw traffic light state indicator (top-left)
+        light_state = self.violation_detector.current_light_state
+        light_colors = {
+            'RED': (0, 0, 255),
+            'YELLOW': (0, 255, 255),
+            'GREEN': (0, 255, 0),
+            'UNKNOWN': (128, 128, 128)
+        }
+        light_color = light_colors.get(light_state, (128, 128, 128))
+        cv2.circle(annotated, (30, 35), 20, light_color, -1)
+        cv2.circle(annotated, (30, 35), 20, (255, 255, 255), 2)
+        cv2.putText(annotated, light_state, (55, 42),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, light_color, 2)
+        
+        # Highlight vehicles that are violating
+        for vehicle in tracked_vehicles:
+            track_id = vehicle.track_id
+            
+            # Check if this vehicle has violated
+            if track_id in all_violations:
+                x1, y1, x2, y2 = vehicle.detection.bbox
+                
+                # Draw thick red box around violating vehicle
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 4)
+                
+                # Draw "VI PHAM" label with red background
+                label = "VI PHAM"
+                (label_w, label_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                cv2.rectangle(annotated, (x1, y1 - label_h - 10), (x1 + label_w + 10, y1), (0, 0, 255), -1)
+                cv2.putText(annotated, label, (x1 + 5, y1 - 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                # Draw flashing effect (alternating border)
+                import time
+                if int(time.time() * 4) % 2 == 0:
+                    cv2.rectangle(annotated, (x1-2, y1-2), (x2+2, y2+2), (255, 255, 0), 2)
+        
+        return annotated
 
 
 class MainWindow(QMainWindow):
@@ -502,8 +578,33 @@ class MainWindow(QMainWindow):
         # Update info labels
         self.lbl_frame.setText(f"Frame: {stats['frame']}/{stats['total_frames']}")
         self.lbl_vehicles.setText(f"Xe: {stats['vehicles']}")
-        self.lbl_light.setText(f"Đèn: {stats.get('light_state', '-')}")
-        self.lbl_violations.setText(f"Vi phạm: {len(self.violation_detector.violations)}")
+        
+        # Color-code light state
+        light_state = stats.get('light_state', '-')
+        light_colors = {'RED': 'red', 'YELLOW': 'orange', 'GREEN': 'green'}
+        light_color = light_colors.get(light_state, 'gray')
+        self.lbl_light.setStyleSheet(f"color: {light_color}; font-weight: bold;")
+        self.lbl_light.setText(f"Đèn: {light_state}")
+        
+        # Update violation count with color
+        total_violations = len(self.violation_detector.violations)
+        if total_violations > 0:
+            self.lbl_violations.setStyleSheet("color: red; font-weight: bold;")
+        else:
+            self.lbl_violations.setStyleSheet("color: green;")
+        self.lbl_violations.setText(f"Vi phạm: {total_violations}")
+        
+        # Show alert for new violations
+        new_violations = stats.get('new_violations', [])
+        if new_violations:
+            for v in new_violations:
+                logger.warning(f"🚨 NEW VIOLATION: {v.violation_id} - {v.vehicle_class}")
+            # Update status bar with alert
+            self.status_label.setStyleSheet("color: red; font-weight: bold;")
+            self.status_label.setText(f"⚠️ PHÁT HIỆN VI PHẠM MỚI: {len(new_violations)} xe!")
+        else:
+            self.status_label.setStyleSheet("")
+            self.status_label.setText("Đang xử lý video...")
         
         # Update violations table
         self.update_violations_table()

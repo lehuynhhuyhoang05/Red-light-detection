@@ -543,9 +543,11 @@ class ViolationDetector:
         self.traffic_light.state_history.append(detected_state)
         self.traffic_light.confidence = best_light.confidence
         
-        # VOTING: xác định state từ history gần đây - TĂNG LÊN 5 frames để tránh flicker
-        if len(self.traffic_light.state_history) >= 5:
-            recent = list(self.traffic_light.state_history)[-5:]
+        # VOTING: xác định state từ history gần đây
+        # GIẢM xuống 3 frames để phản hồi nhanh hơn ở đầu video
+        min_history = 3
+        if len(self.traffic_light.state_history) >= min_history:
+            recent = list(self.traffic_light.state_history)[-5:]  # Lấy 5 frames gần nhất
             vote_counts = Counter(recent)
             voted_state = vote_counts.most_common(1)[0][0]
             
@@ -688,17 +690,18 @@ class ViolationDetector:
                                   frame_number: int, timestamp: datetime) -> Optional[Violation]:
         """
         ==========================================================================
-        CORE VIOLATION DETECTION LOGIC - ĐƠN GIẢN HÓA
+        CORE VIOLATION DETECTION LOGIC - VERSION 3
         ==========================================================================
         
-        Logic mới đơn giản:
+        Logic mới:
         1. Đèn đang ĐỎ
         2. Qua grace period
-        3. Xe đang DI CHUYỂN (y position thay đổi đáng kể)
-        4. Chưa ghi nhận trước đó
-        5. Đủ số frame xác nhận
+        3. Xe đang DI CHUYỂN VỀ PHÍA CAMERA (Y tăng đáng kể)
+        4. Xe KHÔNG đi ngang (từ lane khác)
+        5. Chưa ghi nhận trước đó
+        6. Đủ số frame xác nhận
         
-        KHÔNG CẦN stop_line - chỉ cần xe di chuyển khi đèn đỏ là vi phạm
+        KHÔNG CẦN stop_line - xe di chuyển về camera khi đèn đỏ = vi phạm
         """
         track_id = vehicle.track_id
         
@@ -718,42 +721,48 @@ class ViolationDetector:
         # ========== ĐIỀU KIỆN 2: KHÔNG TRONG GRACE PERIOD ==========
         red_start = self.traffic_light.red_start_time
         if red_start is None:
+            logger.debug(f"Track {track_id}: red_start is None")
             return None
         
         time_since_red = (timestamp - red_start).total_seconds()
         vehicle_y = self._get_vehicle_bottom_y(vehicle)
         
         if time_since_red < self.grace_period:
+            logger.debug(f"Track {track_id}: trong grace period ({time_since_red:.1f}s < {self.grace_period}s)")
             return None
         
-        # ========== ĐIỀU KIỆN 3: XE KHÔNG ĐI NGANG (từ lane khác) ==========
-        # Bỏ check này vì crossing_distance đã filter xe đi ngang rồi
-        # Xe đi ngang sẽ có crossing_distance âm hoặc nhỏ
+        # ========== ĐIỀU KIỆN 3: XE ĐANG DI CHUYỂN VỀ PHÍA CAMERA ==========
+        # Y tăng = xe tiến về phía camera = VƯỢT ĐÈN ĐỎ
+        is_moving_forward = self._is_vehicle_moving_towards_camera(state)
         
-        # ========== ĐIỀU KIỆN 4: XE PHẢI QUA VẠCH (crossing_distance > 0) ==========
-        # Crossing distance = vehicle_y - stop_line_y
-        # Dương = xe đã qua vạch (về phía camera)
-        # Âm = xe ở trước vạch hoặc đi ngược chiều -> KHÔNG PHẠT
+        # ========== ĐIỀU KIỆN 4: XE KHÔNG ĐI NGANG (từ lane khác) ==========
+        is_moving_sideways = self._is_vehicle_moving_sideways(state)
         
-        crossing_distance = vehicle_y - stop_line_y
-        is_past_stop_line = crossing_distance > self.stop_line_threshold
+        # Log chi tiết cho debug
+        y_positions = list(state.y_positions)
+        x_positions = list(state.x_positions)
+        y_change = y_positions[-1] - y_positions[0] if len(y_positions) >= 2 else 0
+        x_change = abs(x_positions[-1] - x_positions[0]) if len(x_positions) >= 2 else 0
         
-        # Log MỌI XE đang được check khi đèn đỏ
-        if self.traffic_light.current_state == "RED":
-            logger.debug(f"🔍 Track {track_id}: y={vehicle_y}, stop_line={stop_line_y}, cross_dist={crossing_distance}, past={is_past_stop_line}, red_dur={time_since_red:.1f}s")
+        # Log EVERY frame khi đèn đỏ - quan trọng để debug
+        logger.info(f"🔍 Track {track_id}: y={vehicle_y}, y_change={y_change:.0f}, x_change={x_change:.0f}, "
+                    f"forward={is_moving_forward}, sideways={is_moving_sideways}, "
+                    f"positions={len(y_positions)}, red_dur={time_since_red:.1f}s")
         
-        # QUAN TRỌNG: Nếu crossing_distance âm nhiều -> xe đi ngược chiều, SKIP
-        if crossing_distance < -50:  # Xe đi ngược chiều hoặc lane khác
+        # Xe đi ngang = KHÔNG PHẠT
+        if is_moving_sideways:
+            state.violation_frames_count = 0
             return None
         
-        # CHỈ VI PHẠM khi xe QUA VẠCH (crossing_distance > threshold)
-        if not is_past_stop_line:
+        # Xe KHÔNG di chuyển về camera = KHÔNG PHẠT
+        if not is_moving_forward:
+            state.violation_frames_count = 0
             return None
         
         # ========== ĐIỀU KIỆN 5: MULTI-FRAME CONFIRMATION ==========
         state.violation_frames_count += 1
         
-        logger.debug(f"Track {track_id}: violation frame {state.violation_frames_count}/{self.min_frames}")
+        logger.warning(f"🚨 Track {track_id}: VIOLATION frame {state.violation_frames_count}/{self.min_frames}")
         
         if state.violation_frames_count < self.min_frames:
             return None
@@ -778,6 +787,35 @@ class ViolationDetector:
         self.violations[track_id] = violation
         return violation
     
+    def _is_vehicle_moving_towards_camera(self, state: VehicleState) -> bool:
+        """
+        Check if vehicle is moving THROUGH INTERSECTION (crossing red light)
+        
+        Tùy góc camera:
+        - Camera từ TRƯỚC (nhìn vào xe): Y TĂNG = xe tiến tới
+        - Camera từ SAU (nhìn theo xe): Y GIẢM = xe tiến tới (đi xa camera)
+        
+        Solution: Check CẢ HAI trường hợp - xe đang di chuyển đáng kể là vi phạm
+        
+        QUAN TRỌNG: Giảm threshold vì xe di chuyển chậm có y_change nhỏ
+        """
+        y_positions = list(state.y_positions)
+        if len(y_positions) < 3:
+            return False  # Cần ít nhất 3 positions
+        
+        # Lấy positions gần nhất
+        recent = y_positions[-8:] if len(y_positions) >= 8 else y_positions
+        
+        # Tính tổng di chuyển Y (có thể âm hoặc dương)
+        y_change = recent[-1] - recent[0]
+        
+        # GIẢM threshold xuống 5px - xe di chuyển chậm cũng bắt được
+        # Xe đứng yên (|y_change| < 5) = không vi phạm
+        min_movement = 5
+        
+        # Trả về True nếu xe di chuyển nhiều (dương HOẶC âm)
+        return abs(y_change) > min_movement
+    
     def _is_vehicle_moving(self, state: VehicleState) -> bool:
         """Check if vehicle is moving (not stationary)"""
         positions = list(state.y_positions)
@@ -793,31 +831,45 @@ class ViolationDetector:
         """
         Check if vehicle is moving SIDEWAYS (left-right) - xe đi ngang từ lane khác
         
-        Xe đi ngang có đặc điểm:
-        - X thay đổi nhiều (> 30px)
-        - Y thay đổi ít hoặc giảm (đi ra xa camera)
+        Xe đi ngang từ lane khác có đặc điểm:
+        - X thay đổi RẤT NHIỀU (di chuyển ngang mạnh)
+        - Y thay đổi ÍT (không tiến về phía camera)
+        - Tỷ lệ X_change / Y_change RẤT cao (> 5)
+        
+        QUAN TRỌNG: Tăng threshold để không filter nhầm xe đi thẳng có quẹo nhẹ
         
         Returns True nếu xe đang đi ngang -> KHÔNG PHẠT
         """
         x_positions = list(state.x_positions)
         y_positions = list(state.y_positions)
         
-        if len(x_positions) < 3 or len(y_positions) < 3:
+        if len(x_positions) < 5 or len(y_positions) < 5:
             return False  # Không đủ data
         
-        recent_x = x_positions[-5:] if len(x_positions) >= 5 else x_positions
-        recent_y = y_positions[-5:] if len(y_positions) >= 5 else y_positions
+        # Lấy nhiều positions hơn để xác định chính xác hướng
+        recent_x = x_positions[-10:] if len(x_positions) >= 10 else x_positions
+        recent_y = y_positions[-10:] if len(y_positions) >= 10 else y_positions
         
-        x_diff = abs(max(recent_x) - min(recent_x))
-        y_diff = max(recent_y) - min(recent_y)  # Y tăng = đi về phía camera
+        x_change = abs(recent_x[-1] - recent_x[0])  # Tổng di chuyển X
+        y_change = abs(recent_y[-1] - recent_y[0])  # Tổng di chuyển Y (lấy abs)
         
-        # Xe đi ngang: X thay đổi nhiều (>50px), Y thay đổi ít (<30px)
-        is_sideways = x_diff > 50 and y_diff < 30
+        # CHỈ coi là xe đi ngang khi:
+        # 1. X thay đổi RẤT nhiều (> 80px) - tăng từ 50 lên 80
+        # 2. Y gần như không đổi (< 10px) - giữ nguyên
+        # 3. Hoặc tỷ lệ X/Y > 5 (tăng từ 3 lên 5)
         
-        if is_sideways:
-            logger.debug(f"Xe đi ngang detected: x_diff={x_diff}, y_diff={y_diff}")
+        if x_change > 80:  # X di chuyển rất nhiều
+            # Xe đi NGANG: X >> Y 
+            if y_change < 10:  # Y gần như không đổi
+                logger.debug(f"Xe đi ngang: x_change={x_change:.0f}, y_change={y_change:.0f}")
+                return True
+            
+            # Tỷ lệ X/Y rất cao = chắc chắn đi ngang
+            if y_change > 0 and x_change / y_change > 5.0:
+                logger.debug(f"Xe đi chéo (nhiều X): x_change={x_change:.0f}, y_change={y_change:.0f}, ratio={x_change/y_change:.1f}")
+                return True
         
-        return is_sideways
+        return False
     
     def _is_vehicle_moving_any_direction(self, state: VehicleState) -> bool:
         """
