@@ -1,243 +1,466 @@
-# Red Light Violation Detection System 🚦
+# 🚦 Red Light Violation Detection System
 
-Hệ thống phát hiện vi phạm vượt đèn đỏ sử dụng Deep Learning (YOLOv11, YOLO-NAS, RT-DETR)
+> Hệ thống phát hiện vi phạm vượt đèn đỏ tự động sử dụng YOLOv11 + ByteTrack + PySide6
+
+[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.1.2-red.svg)](https://pytorch.org/)
+[![YOLOv11](https://img.shields.io/badge/YOLOv11-Ultralytics-00FFFF.svg)](https://docs.ultralytics.com/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+---
 
 ## 📋 Tổng quan
 
-Dự án nghiên cứu và phát triển hệ thống giám sát giao thông thông minh để:
-- ✅ Phát hiện phương tiện (xe máy, ô tô, xe tải)
-- ✅ Nhận diện trạng thái đèn tín hiệu (đỏ, vàng, xanh)
-- ✅ Xác định vạch dừng
-- ✅ Phát hiện hành vi vi phạm vượt đèn đỏ
-- ✅ Lưu bằng chứng và tạo biên bản tự động
+Hệ thống giám sát giao thông thông minh phát hiện vi phạm vượt đèn đỏ với độ chính xác cao (~88.5% mAP@50). Sử dụng:
+- **YOLOv11** cho Object Detection
+- **ByteTrack** cho Multi-Object Tracking
+- **Logic 2 tầng** với 8 điều kiện xác nhận vi phạm
+- **PySide6 GUI** với 5 tab chức năng
 
-## 🎯 Tính năng
+### Các đối tượng được phát hiện
 
-### Core Features
-- **Multi-Model Support**: YOLOv11, YOLO-NAS, RT-DETR
-- **Object Tracking**: ByteTrack để theo dõi xe qua nhiều frame
-- **Violation Logic**: Thuật toán thông minh phát hiện vi phạm
-- **GUI Application**: Giao diện đồ họa với PySide6
-- **CLI Mode**: Xử lý video qua command line
-- **Evidence Storage**: Lưu ảnh bằng chứng và metadata
-- **PDF Reports**: Tạo biên bản vi phạm tự động
+| Class | Mô tả | Vai trò |
+|-------|-------|---------|
+| `car` | Ô tô | Phương tiện giám sát |
+| `motorbike` | Xe máy | Phương tiện giám sát |
+| `red_light` | Đèn đỏ | Điều kiện vi phạm |
+| `green_light` | Đèn xanh | Trạng thái đèn |
+| `yellow_light` | Đèn vàng | Trạng thái đèn |
+| `stop_line` | Vạch dừng | Ranh giới vi phạm |
 
-### GUI Features
-- 📹 **Video Tab**: Xem video real-time với annotations
-- ⚠️ **Violations Tab**: Danh sách vi phạm, xem bằng chứng
-- 📊 **Statistics Tab**: Thống kê chi tiết
-- ⚙️ **Settings Tab**: Cấu hình hệ thống
+---
+
+## ✨ Tính năng
+
+### 🎯 Core Features
+
+- ✅ **Object Detection**: YOLOv11 phát hiện 6 classes với mAP@50 ~88.5%
+- ✅ **Multi-Object Tracking**: ByteTrack gán Track ID duy nhất cho mỗi phương tiện
+- ✅ **Violation Detection**: Logic 2 tầng với 8 điều kiện AND
+- ✅ **Smart Mechanisms**: ROI, Voting, Snapshot, Grace Period, Sideways Detection
+- ✅ **Evidence Collection**: 3 ảnh bằng chứng (before/at/after) + metadata JSON
+- ✅ **PDF Reports**: Biên bản vi phạm tự động với ReportLab
+- ✅ **Session Management**: Lưu trữ theo phiên, dễ quản lý và tra cứu
+
+### 🖥️ GUI Features (PySide6)
+
+| Tab | Chức năng |
+|-----|-----------|
+| 📹 **Video** | Live preview với bounding box, Track ID, ROI overlay |
+| ⚠️ **Vi Phạm** | Danh sách vi phạm, preview ảnh bằng chứng, tạo PDF |
+| 📊 **Thống Kê** | Số liệu tổng hợp: tổng vi phạm, phân loại theo xe, FPS |
+| 🔄 **So Sánh** | Benchmark YOLOv11 vs RF-DETR (mAP, FPS, Memory) |
+| ⚙️ **Cài Đặt** | Config model, ROI, violation params, location info |
+
+### 🧠 Smart Mechanisms
+
+| Cơ chế | Mục đích |
+|--------|----------|
+| **ROI** | Xác định lane từ vị trí đèn đỏ → tránh bắt xe ngược chiều |
+| **Voting (3/5 frames)** | Xác định trạng thái đèn ổn định → tránh flicker |
+| **Snapshot** | Lưu vị trí xe khi đèn chuyển đỏ → không phạt xe đang đi hợp lệ |
+| **Grace Period (1.5s)** | Thời gian ân xá → không phạt xe không kịp dừng |
+| **Sideways Detection** | Phát hiện xe đi ngang → loại trừ xe từ lane khác |
+| **Multi-frame (3 frames)** | Xác nhận liên tiếp → giảm detection noise |
+
+---
 
 ## 🛠️ Cài đặt
 
-### Yêu cầu hệ thống
-- Python 3.8+
-- CUDA 11.8+ (nếu dùng GPU)
-- 16GB RAM
-- 50GB dung lượng trống
+### Yêu cầu Hệ thống
 
-### Bước 1: Clone repository
+| Thành phần | Tối thiểu | Khuyến nghị |
+|------------|-----------|-------------|
+| **OS** | Windows 10 / Ubuntu 20.04 | Windows 11 / Ubuntu 22.04 |
+| **Python** | 3.11+ | 3.11.x |
+| **RAM** | 8GB | 16GB+ |
+| **GPU** | - | NVIDIA GPU với CUDA 11.8+ |
+| **VRAM** | - | 4GB+ (để chạy real-time) |
+| **Storage** | 10GB | 50GB+ (cho dataset) |
+
+### Bước 1: Clone Repository
 
 ```bash
-cd "c:\Study\ITS\Training Model\red_light_detection"
+git clone https://github.com/yourusername/red_light_detection.git
+cd red_light_detection
 ```
 
-### Bước 2: Tạo môi trường ảo
+### Bước 2: Tạo Virtual Environment
 
-```bash
+**Windows (PowerShell):**
+```powershell
 python -m venv venv
+venv\Scripts\Activate.ps1
+```
 
-# Windows
-venv\Scripts\activate
-
-# Linux/Mac
+**Linux/Mac:**
+```bash
+python3 -m venv venv
 source venv/bin/activate
 ```
 
-### Bước 3: Cài đặt dependencies
+### Bước 3: Cài đặt PyTorch (CUDA)
+
+**Nếu có GPU NVIDIA:**
+```bash
+# CUDA 11.8
+pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu118
+```
+
+**Nếu chỉ dùng CPU:**
+```bash
+pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cpu
+```
+
+### Bước 4: Cài đặt Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Bước 4: Cấu hình
+**Danh sách packages chính:**
+- `ultralytics==8.1.0` - YOLOv11
+- `opencv-python==4.8.1.78` - Computer Vision
+- `supervision==0.16.0` - ByteTrack tracking
+- `PySide6==6.6.0` - GUI
+- `reportlab==4.0.7` - PDF generation
+- `loguru==0.7.2` - Logging
 
-Chỉnh sửa `config.yaml` theo nhu cầu:
+### Bước 5: Download Model Weights
+
+**YOLOv11 (Trained):**
+```bash
+# Download từ link (thay YOUR_LINK)
+# Đặt file vào models/yolov11.pt
+```
+
+**Hoặc dùng pre-trained YOLOv11:**
+```bash
+# Ultralytics sẽ tự động download khi chạy lần đầu
+```
+
+### Bước 6: Cấu hình
+
+Sao chép và chỉnh sửa `config.yaml`:
 
 ```yaml
+# config.yaml
 model:
-  type: "yolov11"  # hoặc yolo-nas, rt-detr
+  type: "yolov11"  # Model chính
+  yolov11:
+    variant: "yolov11s"
+    weights: "models/yolov11.pt"  # Đường dẫn model
+    img_size: 640
+    conf_threshold: 0.25
+    iou_threshold: 0.45
+
+tracking:
+  tracker: "bytetrack"
+  track_thresh: 0.3
+  track_buffer: 60
+  match_thresh: 0.7
+
+violation:
+  min_frames: 3
+  grace_period: 0.5  # 0.5 giây
+  stop_line_threshold: 30  # pixels
+  min_vehicle_confidence: 0.5
   
+  # Cho phép xe máy rẽ phải khi đèn đỏ (nếu có biển P.131b)
+  allow_motorbike_right_turn: false
+  
+  roi:
+    enabled: true
+    x_min: 0.25
+    x_max: 0.85
+    y_min: 0.20
+    y_max: 0.95
+
 location:
-  intersection: "Ngã tư Lê Duẩn - Điện Biên Phủ"
+  intersection: "Ngã tư Test"
   city: "Đà Nẵng"
   camera_id: "CAM-001"
 ```
 
+### Bước 7: Test Installation
+
+```bash
+python main.py --help
+```
+
+Nếu thành công, sẽ hiển thị help message.
+
+---
+
 ## 🚀 Sử dụng
 
-### 1. GUI Mode (Khuyến nghị)
+### 1. Chạy GUI (Khuyến nghị)
 
 ```bash
 python main.py --gui
 ```
 
-### 2. CLI Mode - Xử lý video
+**Các thao tác trong GUI:**
+
+| Tab | Thao tác |
+|-----|----------|
+| **Video** | Chọn video → Play/Pause → Xem vi phạm real-time |
+| **Vi Phạm** | Xem danh sách → Click để preview ảnh → Tạo PDF |
+| **Thống Kê** | Xem số liệu tự động cập nhật |
+| **So Sánh** | Chọn video → Start Benchmark → So sánh models |
+| **Cài Đặt** | Thay đổi model, ROI, thông tin location |
+
+### 2. CLI Mode - Xử lý Video
 
 ```bash
+# Xử lý video và lưu kết quả
 python main.py --video path/to/video.mp4
+
+# Xử lý với config tùy chỉnh
+python main.py --video path/to/video.mp4 --config custom_config.yaml
+
+# Xử lý và lưu video output
+python main.py --video path/to/video.mp4 --save-video
 ```
 
-### 3. Sử dụng model cụ thể
+### 3. Xử lý Webcam
 
 ```bash
-python main.py --gui --model yolov11
-python main.py --gui --model yolo-nas
-python main.py --gui --model rt-detr
+python main.py --source 0
 ```
 
-## 📊 Thu thập dữ liệu
+### 4. Chế độ Debug
 
-### Download video từ YouTube
+```bash
+python main.py --gui --debug
+```
 
+---
+
+## 📁 Cấu trúc Thư mục
+
+```
+red_light_detection/
+│
+├── 📄 main.py                      # Entry point
+├── 📄 config.yaml                  # Cấu hình hệ thống
+├── 📄 requirements.txt             # Dependencies
+├── 📄 README.md                    # Tài liệu này
+├── 📄 .gitignore                   # Git ignore rules
+│
+├── 📂 src/                         # Source code
+│   ├── detector.py                # YOLOv11/RF-DETR detection
+│   ├── tracker.py                 # ByteTrack wrapper
+│   ├── violation_logic.py         # Logic xác nhận vi phạm (1221 lines)
+│   ├── report_generator.py        # PDF generation
+│   ├── gui.py                     # PySide6 GUI (5 tabs)
+│   └── utils.py                   # Utilities
+│
+├── 📂 scripts/                     # Utility scripts
+│   ├── analyze_dataset.py         # Phân tích dataset
+│   ├── download_and_extract.py    # Download video + extract frames
+│   ├── download_kaggle.py         # Download từ Kaggle
+│   ├── download_model.py          # Download model weights
+│   ├── extract_frames.py          # Extract frames từ video
+│   ├── train.py                   # Training script
+│   └── test_video_demo.py         # Test demo
+│
+├── 📂 models/                      # Model weights
+│   ├── yolov11.pt                 # YOLOv11 trained
+│   └── rf-detr-base.pth           # RF-DETR (optional)
+│
+├── 📂 data/
+│   ├── 📂 videos/                 # Input videos
+│   ├── 📂 frames/                 # Extracted frames (for training)
+│   ├── 📂 sessions/               # Processing sessions
+│   │   └── highway_test_20260115_143000/
+│   │       ├── violations/        # Ảnh bằng chứng
+│   │       ├── session_data.json  # Metadata
+│   │       └── report.pdf         # Biên bản PDF
+│   │
+│   ├── 📂 train/                  # Training dataset
+│   │   ├── images/
+│   │   └── labels/
+│   ├── 📂 valid/                  # Validation dataset
+│   └── 📂 test/                   # Test dataset
+│
+├── 📂 docs/                        # Documentation
+│   ├── CHUONG_4_5_BAO_CAO.md      # Chương 4-5 báo cáo
+│   ├── HUONG_DAN_VIET_BAO_CAO_GAN_NHAN.md
+│   └── PREPROCESSING_GUIDE.md
+│
+└── 📂 logs/                        # Application logs
+    └── app.log
+```
+
+---
+
+## 🔬 Logic Phát hiện Vi phạm
+
+### Điều kiện Xác nhận Vi phạm (8 điều kiện AND)
+
+| STT | Điều kiện | Mô tả |
+|-----|-----------|-------|
+| 1 | Đèn đang ĐỎ | Xác nhận qua Voting 3/5 frames |
+| 2 | Xe ở TRƯỚC vạch khi đèn đỏ | Snapshot vị trí khi đèn chuyển đỏ |
+| 3 | Xe VƯỢT QUA vạch | Có crossing motion (không chỉ vị trí tĩnh) |
+| 4 | Không trong Grace Period | Sau 1.5 giây từ khi đèn đỏ |
+| 5 | Chưa ghi nhận trước đó | track_id NOT IN recorded_violations |
+| 6 | Đủ số frame xác nhận | min_frames = 3 frames liên tiếp |
+| 7 | Confidence đủ cao | vehicle.confidence >= 0.5 |
+| 8 | Xe nằm trong ROI | Trong vùng lane do đèn đỏ kiểm soát |
+
+### Các trường hợp KHÔNG vi phạm
+
+| Trường hợp | Lý do |
+|------------|-------|
+| Xe đã ở SAU vạch khi đèn đỏ | Đang đi hợp lệ trước đó |
+| Trong grace period (1.5s đầu) | Không kịp dừng |
+| Xe đi ngang (sideways) | Di chuyển theo phương X |
+| Xe ngoài ROI | Không thuộc lane bị kiểm soát |
+| Xe máy rẽ phải (nếu enable) | Theo luật VN có biển P.131b |
+
+### Flow Chart
+
+```
+Video Frame
+    ↓
+[YOLOv11 Detection] → 6 classes
+    ↓
+[ByteTrack] → Track ID
+    ↓
+[Traffic Light Voting] → RED? → NO → Skip
+    ↓ YES
+[Snapshot Position] → Xe ở trước vạch?
+    ↓ YES
+[Check Crossing] → Vượt vạch?
+    ↓ YES
+[Grace Period] → Sau 1.5s?
+    ↓ YES
+[ROI Check] → Trong vùng?
+    ↓ YES
+[Multi-frame] → 3 frames liên tiếp?
+    ↓ YES
+✅ VIOLATION CONFIRMED
+```
+
+---
+
+## 🎓 Training (Tùy chọn)
+
+### Bước 1: Thu thập Dataset
+
+**Option 1: Download từ YouTube**
 ```bash
 python scripts/download_and_extract.py --url "https://youtube.com/watch?v=..." --interval 30
 ```
 
-### Trích xuất frames từ video có sẵn
-
+**Option 2: Extract từ video có sẵn**
 ```bash
 python scripts/download_and_extract.py --video path/to/video.mp4 --interval 30 --max-frames 500
 ```
 
 **Tham số:**
-- `--interval 30`: Trích xuất mỗi 30 frame (1 FPS nếu video 30 FPS)
-- `--max-frames`: Giới hạn số frame
-- `--output`: Thư mục đầu ra (mặc định: `data/frames`)
+- `--interval 30`: Trích xuất mỗi 30 frame (1 FPS với video 30 FPS)
+- `--max-frames 500`: Giới hạn số frame
+- `--output data/frames`: Thư mục đầu ra
 
-## 🎓 Huấn luyện mô hình
+### Bước 2: Annotation trên Roboflow
 
-### Chuẩn bị dataset
-
-1. Upload ảnh lên [Roboflow](https://roboflow.com)
-2. Gán nhãn với các class:
-   - `vehicle` / `motorcycle` / `car` / `truck`
-   - `red_light` / `yellow_light` / `green_light`
+1. Tạo project tại [roboflow.com](https://roboflow.com)
+2. Upload ảnh từ `data/frames/`
+3. Gán nhãn với 6 classes:
+   - `car`, `motorbike`
+   - `red_light`, `green_light`, `yellow_light`
    - `stop_line`
-3. Export dataset (YOLO format)
-4. Download và giải nén vào `data/`
+4. Augmentation (optional):
+   - Brightness: ±20%
+   - Blur: up to 1.5px
+   - Cutout: 5% of bounding boxes
+5. Export → YOLO v8/v11 format
+6. Download và giải nén vào `data/`
 
-### Train YOLOv11
-
-```bash
-python scripts/train.py --model yolov11 --data data/data.yaml
-```
-
-### Train YOLO-NAS
-
-```bash
-python scripts/train.py --model yolo-nas --data data/data.yaml
-```
-
-### Train RT-DETR
-
-```bash
-python scripts/train.py --model rt-detr --data data/data.yaml
-```
-
-### Sau khi train
-
-Model được lưu tại `runs/train/*/weights/best.pt`. Copy vào thư mục `models/`:
-
-```bash
-cp runs/train/yolov11_yolov11s/weights/best.pt models/yolov11s_best.pt
-```
-
-Cập nhật `config.yaml`:
+### Bước 3: Chuẩn bị data.yaml
 
 ```yaml
-model:
-  yolov11:
-    weights: "models/yolov11s_best.pt"
+# data/data.yaml
+path: D:/Training Model/red_light_detection/data
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 6
+names:
+  0: car
+  1: green_light
+  2: motorbike
+  3: red_light
+  4: stop_line
+  5: yellow_light
 ```
 
-## 📁 Cấu trúc thư mục
+### Bước 4: Train Model
 
-```
-red_light_detection/
-├── main.py                    # Entry point
-├── config.yaml                # Cấu hình
-├── requirements.txt           # Dependencies
-│
-├── src/                       # Source code
-│   ├── detector.py           # Object detection (YOLOv11/NAS/RT-DETR)
-│   ├── tracker.py            # ByteTrack tracking
-│   ├── violation_logic.py    # Violation detection logic
-│   ├── gui.py                # PySide6 GUI
-│   ├── report_generator.py   # PDF generation
-│   └── utils.py              # Utilities
-│
-├── scripts/                   # Utility scripts
-│   ├── download_and_extract.py   # Download video, extract frames
-│   └── train.py              # Training script
-│
-├── models/                    # Trained models (.pt, .pth)
-├── data/
-│   ├── videos/               # Input videos
-│   ├── frames/               # Extracted frames
-│   ├── violations/           # Evidence images
-│   └── sessions/             # Processing sessions
-│
-└── logs/                      # Application logs
+```bash
+python scripts/train.py --model yolov11s --data data/data.yaml --epochs 100
 ```
 
-## 🔬 Logic phát hiện vi phạm
+**Tham số training:**
+- `--model`: yolov11n/s/m/l/x (s = khuyến nghị)
+- `--epochs`: 100-300 epochs
+- `--batch`: 16 (điều chỉnh theo VRAM)
+- `--img-size`: 640 (default)
+- `--device`: 0 (GPU index) hoặc cpu
 
-Hệ thống xác định vi phạm khi:
+### Bước 5: Evaluate
 
-1. ✅ Đèn tín hiệu đang **ĐỎ**
-2. ✅ Xe **vượt qua** vạch dừng
-3. ✅ Xe **chưa** ở phía sau vạch khi đèn chuyển đỏ
+Model được lưu tại `runs/detect/train/weights/best.pt`
 
-### Các trường hợp không vi phạm:
+```bash
+# Copy vào models/
+cp runs/detect/train/weights/best.pt models/yolov11_custom.pt
 
-- ❌ Xe đã qua vạch **trước khi** đèn chuyển đỏ
-- ❌ Xe dừng đúng trước vạch
-- ❌ Trong thời gian grace period (1 giây sau đèn đỏ)
+# Update config.yaml
+# model:
+#   yolov11:
+#     weights: "models/yolov11_custom.pt"
+```
 
-## 📊 So sánh mô hình
+---
 
-| Mô hình    | mAP@50 | Precision | Recall | F1-Score | FPS  | Nhận xét |
-|-----------|--------|-----------|--------|----------|------|----------|
-| YOLOv11s  | ?      | ?         | ?      | ?        | ~60  | Cân bằng tốc độ & độ chính xác |
-| YOLO-NAS  | ?      | ?         | ?      | ?        | ~45  | Độ chính xác cao |
-| RT-DETR   | ?      | ?         | ?      | ?        | ~30  | Transformer-based |
+## 📊 Performance Benchmark
 
-*(Điền số liệu sau khi huấn luyện)*
+### So sánh Model (trên dataset của project)
 
-## 🐛 Xử lý lỗi thường gặp
+| Model | mAP@50 | Precision | Recall | FPS (GPU) | FPS (CPU) | VRAM | Kết luận |
+|-------|--------|-----------|--------|-----------|-----------|------|----------|
+| **YOLOv11s** | ~88.5% | - | - | 25-30 | 2-3 | ~2GB | ✅ **Production** |
+| **RF-DETR** | ~89.3% | - | - | 2-5 | <1 | ~4GB | Offline analysis |
+
+**Hardware test:**
+- GPU: NVIDIA RTX 3060 (12GB)
+- CPU: Intel i7-12700
+- RAM: 32GB
+
+---
+
+## 🐛 Troubleshooting
 
 ### 1. CUDA out of memory
 
+**Giải pháp:**
 ```yaml
 # config.yaml
-performance:
-  half_precision: true  # Bật FP16
-  batch_size: 1         # Giảm batch size
-```
-
-Hoặc giảm kích thước ảnh:
-
-```yaml
 model:
   yolov11:
-    img_size: 480  # Thay vì 640
+    img_size: 480  # Giảm từ 640
+    half: true     # Bật FP16
 ```
 
-### 2. Import error
+### 2. Import Error: No module named 'ultralytics'
 
 ```bash
-pip install --upgrade ultralytics super-gradients supervision
+pip install ultralytics==8.1.0
 ```
 
 ### 3. GUI không hiển thị
@@ -247,34 +470,106 @@ pip uninstall PySide6
 pip install PySide6==6.6.0
 ```
 
-## 📝 Roadmap
+### 4. "DLL load failed" trên Windows
 
-- [ ] Tích hợp nhận diện biển số xe
-- [ ] Deploy lên edge device (Jetson Nano)
-- [ ] API REST cho tích hợp hệ thống
-- [ ] Dashboard web real-time
-- [ ] Multi-camera support
-- [ ] Database integration (PostgreSQL)
+Cài Visual C++ Redistributable:
+https://aka.ms/vs/17/release/vc_redist.x64.exe
 
-## 📖 Tài liệu tham khảo
+### 5. Tracking không ổn định
 
-- [YOLOv11 Documentation](https://docs.ultralytics.com)
-- [YOLO-NAS Paper](https://arxiv.org/abs/2305.15808)
-- [RT-DETR Paper](https://arxiv.org/abs/2304.08069)
-- [ByteTrack Paper](https://arxiv.org/abs/2110.06864)
-- [Roboflow Universe](https://universe.roboflow.com)
+```yaml
+tracking:
+  track_thresh: 0.25  # Giảm threshold
+  track_buffer: 90    # Tăng buffer
+```
 
-## 👥 Đóng góp
+### 6. False positive nhiều
 
-Dự án nghiên cứu cho khóa luận tốt nghiệp - ITS Research Team
-
-## 📄 License
-
-MIT License - Tự do sử dụng cho mục đích học tập và nghiên cứu
+```yaml
+violation:
+  min_frames: 5  # Tăng từ 3 lên 5
+  grace_period: 1.0  # Tăng lên 1 giây
+  min_vehicle_confidence: 0.6  # Tăng confidence
+```
 
 ---
 
-**Lưu ý**: Đây là hệ thống nghiên cứu. Để triển khai thực tế cần:
-- Dataset lớn hơn (5000+ ảnh)
-- Testing kỹ lưỡng
-- Tuân thủ quy định pháp luật về giám sát giao thông
+## 📖 Documentation
+
+### Tài liệu Kỹ thuật
+
+- [Chương 4-5: Thiết kế Hệ thống](docs/CHUONG_4_5_BAO_CAO.md)
+- [Hướng dẫn Viết Báo cáo](docs/HUONG_DAN_VIET_BAO_CAO_GAN_NHAN.md)
+- [Preprocessing Guide](docs/PREPROCESSING_GUIDE.md)
+
+### External Resources
+
+- [YOLOv11 Docs](https://docs.ultralytics.com/)
+- [ByteTrack Paper](https://arxiv.org/abs/2110.06864)
+- [Supervision Docs](https://supervision.roboflow.com/)
+- [PySide6 Docs](https://doc.qt.io/qtforpython/)
+
+---
+
+## 🗺️ Roadmap
+
+### ✅ Completed (v1.0)
+- [x] YOLOv11 Detection + ByteTrack
+- [x] Logic 2 tầng với 8 điều kiện
+- [x] GUI 5 tabs với PySide6
+- [x] PDF Report generation
+- [x] Session management
+- [x] ROI + Voting + Grace Period + Sideways detection
+- [x] Motorbike right turn support
+
+### 🔄 In Progress (v1.1)
+- [ ] OCR biển số tự động (ALPR)
+- [ ] Export statistics to Excel
+- [ ] Web dashboard (Flask/FastAPI)
+
+### 📅 Planned (v2.0)
+- [ ] TensorRT optimization (60+ FPS)
+- [ ] Multi-camera support (4-8 cameras)
+- [ ] Edge deployment (Jetson Orin Nano)
+- [ ] Cloud sync + centralized database
+- [ ] Real-time alert system
+
+---
+
+## 👥 Contributors
+
+Developed by Lê Huỳnh Huy Hoàng
+
+
+
+---
+
+## 🙏 Acknowledgments
+
+- **Ultralytics** - YOLOv11 framework
+- **Roboflow** - Dataset management & annotation
+- **ByteTrack authors** - Tracking algorithm
+- **Qt Company** - PySide6 framework
+- **ReportLab** - PDF generation library
+
+---
+
+## 📞 Contact & Support
+
+- 📧 Email: lehuynhhuyhoang05@gmail.com
+
+---
+
+## ⚠️ Disclaimer
+
+Đây là hệ thống nghiên cứu cho mục đích học tập. Để triển khai thực tế cần:
+
+1. ✅ Dataset lớn hơn (5,000+ ảnh đa dạng)
+2. ✅ Testing kỹ lưỡng trong nhiều điều kiện
+3. ✅ Tuân thủ quy định pháp luật về giám sát giao thông
+4. ✅ Approval từ cơ quan chức năng
+5. ✅ GDPR/Privacy compliance
+
+**Không sử dụng trực tiếp cho mục đích thương mại hoặc phạt nguội mà chưa có giấy phép.**
+
+---
